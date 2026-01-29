@@ -1,0 +1,91 @@
+name: RDP-Aliif-Ultimate-Final
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 3600
+
+    steps:
+      - name: 🛠️ 1. Optimasi Performa & RDP
+        run: |
+          # Aktifkan Remote Desktop & Matikan NLA
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          
+          # Optimasi Visual agar RDP tidak lag
+          $visualPath = "HKCU:\Control Panel\Desktop"
+          Set-ItemProperty -Path $visualPath -Name "Wallpaper" -Value ""
+          Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Value 2
+          
+          # Firewall Rule
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" | Out-Null
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+
+      - name: 👤 2. Buat User aliifaryazakii (Password Super Sulit)
+        run: |
+          $userName = "aliifaryazakii"
+          
+          # Password super sulit sesuai permintaanmu
+          $password = "Aliif#$&-++(()Arya_ZAKII_99_JOSS!!"
+          
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          
+          # Hapus user lama jika ada biar tidak bentrok
+          if (Get-LocalUser -Name $userName -ErrorAction SilentlyContinue) {
+              Remove-LocalUser -Name $userName
+          }
+          
+          try {
+              New-LocalUser -Name $userName -Password $securePass -FullName "Aliif Arya Zakii" -Description "RDP Admin" -PasswordNeverExpires -ErrorAction Stop
+              Add-LocalGroupMember -Group "Administrators" -Member $userName
+              Add-LocalGroupMember -Group "Remote Desktop Users" -Member $userName
+              Write-Host "✅ BERHASIL! User $userName sudah aktif."
+          } catch {
+              Write-Error "❌ Gagal membuat user: $_"
+              exit 1
+          }
+          
+          echo "RDP_USER=$userName" >> $env:GITHUB_ENV
+          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
+
+      - name: 🌐 3. Koneksi Tailscale
+        run: |
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          
+          # Login Tailscale (Pastikan TAILSCALE_AUTH_KEY sudah ada di Secrets GitHub)
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=aliif-rdp-server
+          
+          for ($i=1; $i -le 12; $i++) {
+              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+              if ($tsIP) { 
+                  echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+                  break 
+              }
+              Write-Host "Menunggu IP Tailscale... ($i)"
+              Start-Sleep -Seconds 5
+          }
+
+      - name: 🚀 4. Info Login & Keep-Alive
+        run: |
+          if (-not $env:TAILSCALE_IP) { Write-Error "IP tidak ditemukan!"; exit 1 }
+          
+          Write-Host "`n" + ("="*45)
+          Write-Host "   🚀 RDP SIAP DIGUNAKAN - INFO LOGIN 🚀"
+          Write-Host ("="*45)
+          Write-Host "🌐 IP Address : $env:TAILSCALE_IP"
+          Write-Host "👤 Username   : $env:RDP_USER"
+          Write-Host "🔑 Password   : $env:RDP_PASS"
+          Write-Host ("="*45)
+          
+          while ($true) {
+              $time = Get-Date -Format 'HH:mm:ss'
+              Write-Host "[$time] Server Aliif Masih Aktif... Jangan di-stop."
+              Start-Sleep -Seconds 300
+          }
